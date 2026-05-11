@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="//cdn.jsdelivr.net/npm/phaser@3.x.x/dist/phaser.min.js"></script>
+    <script src="UIScenes.js"></script>
+    <script src="game.js"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #fdf5e6;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        width: 100vw;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: none;
+      }
+
+      canvas {
+        border: 8px solid #b2d3a8;
+        border-radius: 4px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        image-rendering: auto;
+      }
+
+      @media (max-width: 768px) {
+        canvas {
+          border: none !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body></body>
+</html>
