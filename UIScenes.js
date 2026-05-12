@@ -19,8 +19,19 @@ class MainMenuScene extends Phaser.Scene {
 
   preload() {
     this.load.image("defaultSkin", "images/defaultSkin.png");
-    this.load.image("player1", window.player1Skin || "images/defaultSkin.png");
-    this.load.image("player2", window.player2Skin || "images/defaultSkin.png");
+
+    const settings = this.game.playerSettings;
+
+    let skinKey = "customSkinURL";
+    let textureKey = "player";
+
+    if (settings && settings.isDuo) {
+      skinKey = `customSkinURL_${settings.id}`;
+      textureKey = `player_${settings.id}`;
+    }
+
+    const savedSkin = window[skinKey] || "images/defaultSkin.png";
+    this.load.image(textureKey, savedSkin);
   }
 
   create() {
@@ -29,18 +40,16 @@ class MainMenuScene extends Phaser.Scene {
     this.centerY = height / 2;
 
     this.cameras.main.setBackgroundColor(Theme.bg);
+    const settings = this.game.playerSettings;
+    const textureKey =
+      settings && settings.isDuo ? `player_${settings.id}` : "player";
 
-    this.player1Preview = this.add.sprite(
+    this.playerPreview = this.add.sprite(
       this.centerX,
       this.centerY - 250,
-      "player1",
+      textureKey,
     );
-    this.player2Preview = this.add
-      .sprite(this.centerX + 100, this.centerY - 250, "player2")
-      .setVisible(false);
-
-    this.setupCharacterVisuals(this.player1Preview);
-    this.setupCharacterVisuals(this.player2Preview);
+    this.setupCharacterVisuals(this.playerPreview);
 
     this.menuElements = this.add.group();
 
@@ -53,11 +62,13 @@ class MainMenuScene extends Phaser.Scene {
 
   showInitialMenu() {
     this.clearMenu();
+    this.playerPreview.setX(this.centerX).setVisible(true);
 
-    this.player1Preview.setX(this.centerX).setVisible(true);
-    this.player2Preview.setVisible(false);
+    const settings = this.game.playerSettings;
+    const scoreKey =
+      settings && settings.isDuo ? `bestScore_${settings.id}` : "bestScore";
+    const highScore = localStorage.getItem(scoreKey) || 0;
 
-    const highScore = localStorage.getItem("bestScore") || 0;
     const scoreText = this.add
       .text(this.centerX, this.centerY - 180, "BEST SCORE: " + highScore, {
         fontSize: "20px",
@@ -78,42 +89,19 @@ class MainMenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const startBtn = this.createStyledButton(
-      this.centerX,
-      this.centerY + 40,
-      "START",
-      "#88B04B",
-    );
-    startBtn.on("pointerdown", () => {
-      if (!this.sys.game.device.os.desktop) {
-        window.gameMode = "single";
-        this.scene.start("MainScene");
-      } else {
-        this.showModeSelection();
-      }
-    });
+    const isDesktop = this.sys.game.device.os.desktop;
 
-    const elements = [scoreText, titleText, startBtn];
-
-    if (!this.sys.game.device.os.desktop) {
-      const uploadBtn = this.createStyledButton(
-        this.centerX,
-        this.centerY + 120,
-        "UPLOAD SKIN",
-        "#9FA8DA",
-      );
-      uploadBtn.on("pointerdown", () => this.handleUpload(1));
-
-      const howToBtn = this.createStyledButton(
-        this.centerX,
-        this.centerY + 200,
-        "HOW TO PLAY",
-        "#9FA8DA",
-      );
-      howToBtn.on("pointerdown", () => this.showInstructions());
-
-      elements.push(uploadBtn, howToBtn);
+    if (!isDesktop || (settings && settings.isDuo)) {
+      this.mobileMenu(scoreText, titleText);
     } else {
+      const startBtn = this.createStyledButton(
+        this.centerX,
+        this.centerY + 40,
+        "START",
+        "#88B04B",
+      );
+      startBtn.on("pointerdown", () => this.showModeSelection());
+
       const howToBtn = this.createStyledButton(
         this.centerX,
         this.centerY + 130,
@@ -122,8 +110,60 @@ class MainMenuScene extends Phaser.Scene {
       );
       howToBtn.on("pointerdown", () => this.showInstructions());
 
-      elements.push(howToBtn);
+      const resetBtn = this.add
+        .text(this.centerX, this.scale.height - 50, "Reset score", {
+          fontSize: "14px",
+          fill: "#A1887F",
+          textDecoration: "underline",
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+
+      resetBtn.on("pointerdown", () => {
+        localStorage.removeItem("bestScore");
+        this.scene.restart();
+      });
+
+      this.menuElements.addMultiple([
+        scoreText,
+        titleText,
+        startBtn,
+        howToBtn,
+        resetBtn,
+      ]);
     }
+  }
+
+  mobileMenu(scoreText, titleText) {
+    const startBtn = this.createStyledButton(
+      this.centerX,
+      this.centerY + 40,
+      "START",
+      "#88B04B",
+    );
+    startBtn.on("pointerdown", () => {
+      const settings = this.game.playerSettings;
+      if (!settings || !settings.isDuo || settings.id === 1) {
+        if (typeof WorldSeed !== "undefined") WorldSeed.platforms = [];
+      }
+      this.scene.start("MainScene");
+    });
+
+    const uploadBtn = this.createStyledButton(
+      this.centerX,
+      this.centerY + 120,
+      "UPLOAD SKIN",
+      "#9FA8DA",
+    );
+    uploadBtn.on("pointerdown", () => this.handleUpload());
+
+    const howToBtn = this.createStyledButton(
+      this.centerX,
+      this.centerY + 200,
+      "HOW TO PLAY",
+      "#9FA8DA",
+    );
+    howToBtn.on("pointerdown", () => this.showInstructions());
 
     const resetBtn = this.add
       .text(this.centerX, this.scale.height - 50, "Reset score", {
@@ -135,57 +175,27 @@ class MainMenuScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
 
     resetBtn.on("pointerdown", () => {
-      localStorage.removeItem("bestScore");
+      const settings = this.game.playerSettings;
+      const scoreKey =
+        settings && settings.isDuo ? `bestScore_${settings.id}` : "bestScore";
+      localStorage.removeItem(scoreKey);
       this.scene.restart();
     });
 
-    elements.push(resetBtn);
-
-    this.menuElements.addMultiple(elements);
-  }
-
-  showInstructions() {
-    this.clearMenu();
-
-    const title = this.add
-      .text(this.centerX, this.centerY - 170, "HOW TO PLAY", {
-        fontSize: "32px",
-        fontFamily: "Courier New",
-        fill: Theme.darkText,
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5);
-
-    const isMobile = !this.sys.game.device.os.desktop;
-    const fontSize = isMobile ? "16px" : "18px";
-    const lineSpacing = isMobile ? 4 : 10;
-
-    const text = this.add
-      .text(this.centerX, this.centerY, InstructionsText, {
-        fontSize: fontSize,
-        fontFamily: "Courier New",
-        fill: Theme.darkText,
-        align: "center",
-        lineSpacing: lineSpacing,
-        wordWrap: { width: this.scale.width - 50 },
-      })
-      .setOrigin(0.5);
-
-    const backBtn = this.createStyledButton(
-      this.centerX,
-      this.centerY + 200,
-      "BACK",
-      Theme.accent,
-    );
-    backBtn.on("pointerdown", () => this.showInitialMenu());
-
-    this.menuElements.addMultiple([title, text, backBtn]);
+    this.menuElements.addMultiple([
+      scoreText,
+      titleText,
+      startBtn,
+      uploadBtn,
+      howToBtn,
+      resetBtn,
+    ]);
   }
 
   showModeSelection() {
     this.clearMenu();
-    this.player1Preview.setX(this.centerX);
-    this.player1Preview.setVisible(true);
+    this.playerPreview.setX(this.centerX);
+    this.playerPreview.setVisible(true);
 
     const highScore = localStorage.getItem("bestScore") || 0;
     const scoreText = this.add
@@ -214,12 +224,7 @@ class MainMenuScene extends Phaser.Scene {
       "SINGLE PLAYER",
       "#88B04B",
     );
-    const multiBtn = this.createStyledButton(
-      this.centerX,
-      this.centerY + 130,
-      "2 PLAYERS",
-      "#F4C2C2",
-    );
+
     const backBtn = this.createStyledButton(
       this.centerX,
       this.centerY + 220,
@@ -228,21 +233,39 @@ class MainMenuScene extends Phaser.Scene {
     );
 
     singleBtn.on("pointerdown", () => this.showSinglePlayerMenu());
-    multiBtn.on("pointerdown", () => this.showMultiPlayerMenu());
     backBtn.on("pointerdown", () => this.showInitialMenu());
 
-    this.menuElements.addMultiple([
-      singleBtn,
-      multiBtn,
-      backBtn,
-      titleText,
-      scoreText,
-    ]);
+    const settings = this.game.playerSettings;
+
+    if (!settings || !settings.isDuo) {
+      const duoBtn = this.createStyledButton(
+        this.centerX,
+        this.centerY + 130,
+        "2 PLAYERS",
+        "#F4C2C2",
+      );
+
+      duoBtn.on("pointerdown", () => {
+        duoBtn.setVisible(false);
+
+        window.game1.destroy(true);
+
+        window.game1 = createGameInstance("player1-root", {
+          id: 1,
+          isDuo: true,
+        });
+        window.game2 = createGameInstance("player2-root", {
+          id: 2,
+          isDuo: true,
+        });
+      });
+    }
+
+    this.menuElements.addMultiple([singleBtn, backBtn, titleText, scoreText]);
   }
 
   showSinglePlayerMenu() {
     this.clearMenu();
-    window.gameMode = "single";
 
     const highScore = localStorage.getItem("bestScore") || 0;
     const scoreText = this.add
@@ -271,103 +294,59 @@ class MainMenuScene extends Phaser.Scene {
       "PLAY",
       "#88B04B",
     );
+    playBtn.on("pointerdown", () => this.scene.start("MainScene"));
+
     const uploadBtn = this.createStyledButton(
       this.centerX,
       this.centerY + 130,
       "UPLOAD SKIN",
       "#9FA8DA",
     );
+    uploadBtn.on("pointerdown", () => this.handleUpload());
+
     const backBtn = this.createStyledButton(
       this.centerX,
       this.centerY + 220,
       "BACK",
       Theme.accent,
     );
-
-    playBtn.on("pointerdown", () => this.scene.start("MainScene"));
-    uploadBtn.on("pointerdown", () => this.handleUpload(1));
     backBtn.on("pointerdown", () => this.showModeSelection());
 
-    this.menuElements.addMultiple([
-      playBtn,
-      uploadBtn,
-      backBtn,
-      titleText,
-      scoreText,
-    ]);
+    this.menuElements.addMultiple([playBtn, uploadBtn, backBtn, titleText]);
   }
 
-  showMultiPlayerMenu() {
+  showInstructions() {
     this.clearMenu();
-    window.gameMode = "multi";
 
-    const highScore = localStorage.getItem("bestScore") || 0;
-    const scoreText = this.add
-      .text(this.centerX, this.centerY - 180, "BEST SCORE: " + highScore, {
-        fontSize: "20px",
+    const title = this.add
+      .text(this.centerX, this.centerY - 170, "HOW TO PLAY", {
+        fontSize: "32px",
         fontFamily: "Courier New",
-        fill: Theme.accent,
+        fill: Theme.darkText,
         fontStyle: "bold",
       })
       .setOrigin(0.5);
 
-    const titleText = this.add
-      .text(this.centerX, this.centerY - 80, gameNameText, {
-        fontSize: "52px",
-        fontFamily: "serif",
+    const text = this.add
+      .text(this.centerX, this.centerY, InstructionsText, {
+        fontSize: "16px",
+        fontFamily: "Courier New",
         fill: Theme.darkText,
         align: "center",
-        stroke: "#ffffff",
-        strokeThickness: 4,
+        lineSpacing: 8,
+        wordWrap: { width: this.scale.width - 50 },
       })
       .setOrigin(0.5);
 
-    this.player1Preview.setPosition(this.centerX - 100, this.centerY - 250);
-    this.player2Preview
-      .setVisible(true)
-      .setPosition(this.centerX + 100, this.centerY - 250);
-
-    const playBtn = this.createStyledButton(
-      this.centerX,
-      this.centerY + 10,
-      "PLAY",
-      "#88B04B",
-    );
-    const up1 = this.createStyledButton(
-      this.centerX,
-      this.centerY + 90,
-      "SKIN PLAYER 1",
-      "#9FA8DA",
-    );
-    const up2 = this.createStyledButton(
-      this.centerX,
-      this.centerY + 160,
-      "SKIN PLAYER 2",
-      "#F4C2C2",
-    );
     const backBtn = this.createStyledButton(
       this.centerX,
-      this.centerY + 230,
+      this.centerY + 200,
       "BACK",
       Theme.accent,
     );
+    backBtn.on("pointerdown", () => this.showInitialMenu());
 
-    playBtn.on("pointerdown", () => this.scene.start("MainScene"));
-    up1.on("pointerdown", () => this.handleUpload(1));
-    up2.on("pointerdown", () => this.handleUpload(2));
-    backBtn.on("pointerdown", () => {
-      this.player2Preview.setVisible(false);
-      this.showModeSelection();
-    });
-
-    this.menuElements.addMultiple([
-      playBtn,
-      up1,
-      up2,
-      backBtn,
-      titleText,
-      scoreText,
-    ]);
+    this.menuElements.addMultiple([title, text, backBtn]);
   }
 
   setupCharacterVisuals(sprite) {
@@ -375,15 +354,11 @@ class MainMenuScene extends Phaser.Scene {
     const targetSize = 70;
     this.tweens.killTweensOf(sprite);
 
-    const updateScale = () => {
-      const ratio = Math.min(
-        targetSize / sprite.width,
-        targetSize / sprite.height,
-      );
-      sprite.setScale(ratio);
-    };
-
-    updateScale();
+    const ratio = Math.min(
+      targetSize / sprite.width,
+      targetSize / sprite.height,
+    );
+    sprite.setScale(ratio);
 
     this.tweens.add({
       targets: sprite,
@@ -394,7 +369,7 @@ class MainMenuScene extends Phaser.Scene {
     });
   }
 
-  handleUpload(playerNum) {
+  handleUpload() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
@@ -403,21 +378,29 @@ class MainMenuScene extends Phaser.Scene {
       const file = e.target.files[0];
       if (!file) return;
 
-      const oldURL = playerNum === 1 ? window.player1Skin : window.player2Skin;
-      if (oldURL) URL.revokeObjectURL(oldURL);
+      const settings = this.game.playerSettings;
+      const skinKey =
+        settings && settings.isDuo
+          ? `customSkinURL_${settings.id}`
+          : "customSkinURL";
+
+      if (window[skinKey]) {
+        URL.revokeObjectURL(window[skinKey]);
+      }
 
       const fileURL = URL.createObjectURL(file);
-      if (playerNum === 1) window.player1Skin = fileURL;
-      else window.player2Skin = fileURL;
+      window[skinKey] = fileURL;
 
-      this.updateCharacterImage(fileURL, playerNum);
+      this.updateCharacterImage(fileURL);
     };
     input.click();
   }
 
-  updateCharacterImage(url, playerNum) {
-    const textureKey = `player${playerNum}`;
-    const preview = playerNum === 1 ? this.player1Preview : this.player2Preview;
+  updateCharacterImage(url) {
+    const settings = this.game.playerSettings;
+    const textureKey =
+      settings && settings.isDuo ? `player_${settings.id}` : "player";
+    const preview = this.playerPreview;
 
     if (preview) {
       preview.setVisible(false);
@@ -426,7 +409,9 @@ class MainMenuScene extends Phaser.Scene {
     if (this.textures.exists(textureKey)) {
       this.textures.remove(textureKey);
     }
+
     this.load.image(textureKey, url);
+
     this.load.once("complete", () => {
       if (!preview || !preview.active) return;
       preview.setTexture(textureKey);
@@ -446,7 +431,7 @@ class MainMenuScene extends Phaser.Scene {
         fill: "#fff",
         padding: { x: 20, y: 10 },
         fontStyle: "bold",
-        fixedWidth: 300,
+        fixedWidth: 280,
         align: "center",
       })
       .setOrigin(0.5)
@@ -536,9 +521,8 @@ class GameOverScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.4);
-
     this.add
-      .text(width / 2, height / 2 - 120, "THE GARDEN FELL", {
+      .text(width / 2, height / 2 - 120, "GAME OVER", {
         fontSize: "42px",
         fill: "#fff",
         fontStyle: "bold",
@@ -568,10 +552,17 @@ class GameOverScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
 
-    restartBtn.on("pointerdown", () => {
+    const handleRestart = () => {
       this.scene.stop();
-      this.scene.get("MainScene").scene.restart();
-    });
+      const mainScene = this.scene.get("MainScene");
+      if (mainScene) {
+        mainScene.scene.restart();
+      }
+    };
+
+    restartBtn.on("pointerdown", handleRestart);
+
+    this.input.keyboard.on("keydown-SPACE", handleRestart);
 
     const menuBtn = this.add
       .text(width / 2, height / 2 + 180, "RETREAT", {

@@ -7,23 +7,24 @@ class MainScene extends Phaser.Scene {
     this.load.image("enemy", "images/enemy.png");
     this.load.image("shooter", "images/shooter.png");
     this.load.image("pinkBullet", "images/pinkFlower.png");
-    this.load.image("defaultSkin", "images/defaultSkin.png");
-    if (window.player1Skin) {
-      if (this.textures.exists("player1")) {
-        this.textures.remove("player1");
-      }
-      this.load.image("player1", window.player1Skin);
-    } else {
-      this.load.image("player1", "images/defaultSkin.png");
-    }
+    this.load.image("shield", "images/shield.png");
+    const settings = this.game.playerSettings;
+    const skinKey =
+      settings && settings.isDuo
+        ? `customSkinURL_${settings.id}`
+        : "customSkinURL";
+    const textureKey =
+      settings && settings.isDuo ? `player_${settings.id}` : "player";
 
-    if (window.player2Skin) {
-      if (this.textures.exists("player2")) {
-        this.textures.remove("player2");
+    const skinURL = window[skinKey];
+
+    if (skinURL) {
+      if (this.textures.exists(textureKey)) {
+        this.textures.remove(textureKey);
       }
-      this.load.image("player2", window.player2Skin);
+      this.load.image(textureKey, skinURL);
     } else {
-      this.load.image("player2", "images/defaultSkin.png");
+      this.load.image(textureKey, "images/defaultSkin.png");
     }
   }
   create() {
@@ -36,7 +37,7 @@ class MainScene extends Phaser.Scene {
     this.STATE_GAME = this.STATE_WAITING;
     this.score = 0;
     this.minY = 100;
-    this.maxY = 130;
+    this.maxY = 140;
     this.centerX = this.scale.width / 2;
     this.bottomY = this.scale.height;
     this.platformSpeed = 130;
@@ -44,6 +45,9 @@ class MainScene extends Phaser.Scene {
     this.baseGravity = 800;
     this.baseJumpForce = 480;
     this.playerSpeed = 300;
+    this.lastShieldScore = 0;
+    this.isShielded = false;
+    this.shieldGraphic = null;
 
     this.scoreText = this.add
       .text(20, 20, "Score: 0", {
@@ -88,6 +92,11 @@ class MainScene extends Phaser.Scene {
       immovable: false,
     });
 
+    this.bonuses = this.physics.add.group({
+      allowGravity: false,
+      immovable: false,
+    });
+
     this.ground = this.add.rectangle(
       this.centerX,
       this.bottomY,
@@ -99,65 +108,50 @@ class MainScene extends Phaser.Scene {
     this.ground.body.setAllowGravity(false);
     this.ground.body.setImmovable(true);
 
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.keys = this.input.keyboard.addKeys({
-      left: Phaser.Input.Keyboard.KeyCodes.A,
-      right: Phaser.Input.Keyboard.KeyCodes.D,
-    });
+    const settings = this.game.playerSettings;
+
+    if (settings.id === 2) {
+      this.playerKeys = this.input.keyboard.createCursorKeys();
+    } else {
+      this.playerKeys = this.input.keyboard.addKeys({
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        right: Phaser.Input.Keyboard.KeyCodes.D,
+      });
+    }
 
     this.lastPlatformX = this.scale.width / 2;
     let currentY = this.scale.height - 50;
 
-    for (let i = 0; i < 10; i++) {
-      currentY -= Phaser.Math.Between(this.minY, this.maxY);
-
-      this.spawnPlatform(currentY);
-
-      if (Phaser.Math.Between(1, 100) > 40) {
-        this.spawnPlatform(currentY, null, true);
-      }
+    if (this.game.playerSettings.id === 1) {
+      GlobalWorld.minY = this.minY;
+      GlobalWorld.maxY = this.maxY;
+      GlobalWorld.init(this.scale.width, this.scale.height);
     }
 
-    const skin1 = this.textures.exists("player1") ? "player1" : "defaultSkin";
-    const skin2 = this.textures.exists("player2") ? "player2" : "defaultSkin";
-
-    if (window.gameMode === "multi") {
-      this.player1 = this.createPlayer(
-        this.centerX - 60,
-        this.bottomY - 70,
-        skin1,
-      );
-      this.player2 = this.createPlayer(
-        this.centerX + 60,
-        this.bottomY - 70,
-        skin2,
-      );
-
-      if (!window.player1Skin && !window.player2Skin) {
-        this.player2.setTint(0xffcccc);
-      }
-
-      this.setupPlayerCollisions(this.player1);
-      this.setupPlayerCollisions(this.player2);
-    } else {
-      this.player = this.createPlayer(
-        this.centerX,
-        this.bottomY - 70,
-        "player1",
-      );
-      this.setupPlayerCollisions(this.player);
+    if (this.game.playerSettings.id === 1) {
+      GlobalWorld.init(this.scale.width, this.scale.height);
     }
+
+    GlobalWorld.platforms.forEach((data) => {
+      this.createPhysicalPlatform(data);
+    });
+    this.player = this.createPlayer();
+    this.setupPlayerCollisions(this.player);
 
     this.isLeftTouching = false;
     this.isRightTouching = false;
 
     this.input.addPointer(1);
+
     this.input.activePointer.isDown = false;
   }
 
-  createPlayer(x, y, skin) {
+  createPlayer() {
+    const settings = this.game.playerSettings;
+    const textureKey =
+      settings && settings.isDuo ? `player_${settings.id}` : "player";
     let p;
-    p = this.add.sprite(x, y, skin);
+    p = this.add.sprite(this.centerX, this.bottomY - 70, textureKey);
     p.setDisplaySize(50, 50);
     this.physics.add.existing(p);
     p.body.setCollideWorldBounds(true);
@@ -199,7 +193,9 @@ class MainScene extends Phaser.Scene {
     );
 
     this.physics.add.overlap(player, this.enemies, (enemy) => {
-      this.gameOver();
+      if (!this.isShielded) {
+        this.gameOver();
+      }
     });
 
     this.physics.add.collider(player, this.ground, () => {
@@ -207,7 +203,14 @@ class MainScene extends Phaser.Scene {
     });
 
     this.physics.add.overlap(player, this.bullets, () => {
-      this.gameOver();
+      if (!this.isShielded) {
+        this.gameOver();
+      }
+    });
+
+    this.physics.add.overlap(this.player, this.bonuses, (player, bonus) => {
+      bonus.destroy();
+      this.activateShield();
     });
 
     this.physics.world.on("worldbounds", (body) => {
@@ -218,77 +221,78 @@ class MainScene extends Phaser.Scene {
     player.body.onWorldBounds = true;
   }
 
-  spawnPlatform(currentY, x = null, isExtra = false) {
-    let finalX;
-    if (x !== null) {
-      finalX = x;
-    } else if (isExtra) {
-      finalX = this.getXWithGap(currentY, 110);
-    } else {
-      let range = this.scale.width / 3;
-      let minX = Math.max(50, this.lastPlatformX - range);
-      let maxX = Math.min(this.scale.width - 50, this.lastPlatformX + range);
-      finalX = Phaser.Math.Between(minX, maxX);
-      this.lastPlatformX = finalX;
+  createPhysicalPlatform(data) {
+    const isTooClose = this.platforms
+      .getChildren()
+      .some((p) => Math.abs(p.y - data.y) < 30 && Math.abs(p.x - data.x) < 50);
+    if (isTooClose) return;
+
+    this.renderPlatform(data);
+
+    if (data.extraSibling) {
+      this.renderPlatform({
+        ...data.extraSibling,
+        isExtra: false,
+        isMoving: false,
+        enemyType: null,
+      });
     }
+  }
 
-    let color = isExtra ? 0xadd8e6 : 0xb2d3a8;
-    let rect = this.add.rectangle(finalX, currentY, 80, 20, color);
-    rect.setStrokeStyle(2, isExtra ? 0x4682b4 : 0x88b04b);
+  renderPlatform(data) {
+    let color = data.isExtra ? 0xadd8e6 : 0xb2d3a8;
+    let rect = this.add.rectangle(data.x, data.y, 80, 20, color);
+    rect.setStrokeStyle(2, data.isExtra ? 0x4682b4 : 0x88b04b);
 
-    rect.isExtra = isExtra;
-
+    rect.globalId = data.id;
+    rect.isExtra = data.isExtra;
     this.physics.add.existing(rect);
     this.platforms.add(rect);
-
     rect.body.setImmovable(true);
     rect.body.checkCollision.up = false;
-    rect.body.checkCollision.down = false;
-    rect.body.checkCollision.left = false;
-    rect.body.checkCollision.right = false;
 
-    if (!isExtra && x === null && Phaser.Math.Between(1, 100) > 80) {
+    if (data.isMoving) {
       rect.isMoving = true;
-      rect.speed = 100;
-      rect.minX = Math.max(40, finalX - 50);
-      rect.maxX = Math.min(this.scale.width - 40, finalX + 50);
+      rect.speed = data.speed;
+      rect.minX = Math.max(40, data.x - data.range);
+      rect.maxX = Math.min(this.scale.width - 40, data.x + data.range);
       rect.body.setVelocityX(rect.speed);
       rect.setFillStyle(0xffd1dc);
     }
 
-    if (!isExtra && this.score > 20) {
-      if (Phaser.Math.Between(1, 100) > 80) {
-        if (Phaser.Math.Between(1, 100) > 50) {
-          this.spawnShooter(rect);
-        } else {
-          this.spawnEnemy(rect);
-        }
-
-        let safeX = rect.x > this.centerX ? rect.x - 120 : rect.x + 120;
-        safeX = Phaser.Math.Clamp(safeX, 50, this.scale.width - 50);
-
-        this.spawnPlatform(rect.y + Phaser.Math.Between(0, 20), safeX, true);
-      }
-    }
+    if (data.enemyType === "enemy") this.spawnEnemy(rect);
+    if (data.enemyType === "shooter") this.spawnShooter(rect);
   }
 
-  getXWithGap(currentY, minDistance = 100) {
-    let attempts = 0;
-    let x;
-    let isSafe = false;
+  spawnShieldBonus() {
+    let bonus = this.add.image(this.scale.width / 2, -50, "shield");
+    bonus.setDisplaySize(40, 40);
+    this.physics.add.existing(bonus);
+    this.bonuses.add(bonus);
+    bonus.body.setVelocityY(200);
+  }
 
-    while (!isSafe && attempts < 15) {
-      x = Phaser.Math.Between(50, this.scale.width - 50);
-      isSafe = true;
-      attempts++;
+  activateShield() {
+    this.isShielded = true;
 
-      this.platforms.children.iterate((p) => {
-        if (Math.abs(p.y - currentY) < 10 && Math.abs(p.x - x) < minDistance) {
-          isSafe = false;
-        }
-      });
-    }
-    return x;
+    if (this.shieldGraphic) this.shieldGraphic.destroy();
+
+    this.shieldGraphic = this.add.circle(
+      this.player.x,
+      this.player.y,
+      45,
+      0x00bfff,
+      0.5,
+    );
+    this.shieldGraphic.setDepth(5);
+
+    this.time.delayedCall(10000, () => {
+      this.isShielded = false;
+      if (this.shieldGraphic) {
+        this.shieldGraphic.destroy();
+        this.shieldGraphic = null;
+      }
+    });
   }
 
   update() {
@@ -307,13 +311,47 @@ class MainScene extends Phaser.Scene {
   }
 
   handleWaitingState() {
-    const isTouchAction = this.input.activePointer.isDown;
-    if (window.gameMode === "multi") {
-      this.player1.body.setVelocityX(0);
-      this.player2.body.setVelocityX(0);
+    this.player.body.setVelocityX(0);
+    this.platforms.setVelocityY(0);
+    this.platforms.setVelocityX(0);
+    this.enemies.setVelocityY(0);
+
+    const settings = this.game.playerSettings;
+    let isAction = false;
+
+    if (settings && settings.isDuo) {
+      if (this.playerKeys) {
+        isAction = this.playerKeys.left.isDown || this.playerKeys.right.isDown;
+      }
     } else {
-      this.player.body.setVelocityX(0);
-      if (isTouchAction) {
+      const cursors = this.input.keyboard.createCursorKeys();
+      const wasd = this.input.keyboard.addKeys({
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        right: Phaser.Input.Keyboard.KeyCodes.D,
+      });
+
+      isAction =
+        cursors.left.isDown ||
+        cursors.right.isDown ||
+        wasd.left.isDown ||
+        wasd.right.isDown ||
+        this.input.activePointer.isDown;
+    }
+
+    if (isAction) {
+      this.STATE_GAME = this.STATE_PLAYING;
+
+      if (this.tapToStart) {
+        this.tapToStart.destroy();
+      }
+
+      this.platforms.getChildren().forEach((platform) => {
+        if (platform.isMoving && platform.body) {
+          platform.body.setVelocityX(platform.speed);
+        }
+      });
+
+      if (!settings.isDuo && this.input.activePointer.isDown) {
         if (this.input.activePointer.x < this.scale.width / 2) {
           this.player.body.setVelocityX(-this.playerSpeed);
         } else {
@@ -321,67 +359,93 @@ class MainScene extends Phaser.Scene {
         }
       }
     }
-    this.platforms.setVelocityY(0);
-    this.platforms.setVelocityX(0);
-    this.enemies.setVelocityY(0);
-
-    const isKeyboardAction =
-      this.cursors.right.isDown ||
-      this.cursors.left.isDown ||
-      this.keys.right.isDown ||
-      this.keys.left.isDown;
-
-    if (isKeyboardAction || isTouchAction) {
-      this.STATE_GAME = this.STATE_PLAYING;
-      this.tapToStart.destroy();
-
-      this.platforms.getChildren().forEach((platform) => {
-        if (platform.isMoving) {
-          platform.body.setVelocityX(platform.speed);
-        }
-      });
-    }
   }
 
   handlePlayingState() {
-    if (window.gameMode === "multi") {
-      this.player1.body.setVelocityX(0);
-      this.player2.body.setVelocityX(0);
-      if (this.cursors.left.isDown) {
-        this.player2.body.setVelocityX(-this.playerSpeed);
-        this.player2.setFlipX(false);
-      } else if (this.cursors.right.isDown) {
-        this.player2.body.setVelocityX(this.playerSpeed);
-        this.player2.setFlipX(true);
-      }
-      if (this.keys.left.isDown) {
-        this.player1.body.setVelocityX(-this.playerSpeed);
-        this.player1.setFlipX(false);
-      } else if (this.keys.right.isDown) {
-        this.player1.body.setVelocityX(this.playerSpeed);
-        this.player1.setFlipX(true);
+    this.player.body.setVelocityX(0);
+
+    const settings = this.game.playerSettings;
+    let leftPressed = false;
+    let rightPressed = false;
+
+    if (settings.isDuo) {
+      if (this.playerKeys) {
+        leftPressed = this.playerKeys.left.isDown;
+        rightPressed = this.playerKeys.right.isDown;
       }
     } else {
-      this.player.body.setVelocityX(0);
-      if (this.cursors.left.isDown || this.keys.left.isDown) {
-        this.player.body.setVelocityX(-this.playerSpeed);
-        this.player.setFlipX(false);
-      } else if (this.cursors.right.isDown || this.keys.right.isDown) {
-        this.player.body.setVelocityX(this.playerSpeed);
-        this.player.setFlipX(true);
-      } else {
-        const pointer = this.input.activePointer;
-        if (pointer.isDown) {
-          if (pointer.x < this.scale.width / 2) {
-            this.player.body.setVelocityX(-this.playerSpeed);
-            this.player.setFlipX(false);
-          } else {
-            this.player.body.setVelocityX(this.playerSpeed);
-            this.player.setFlipX(true);
-          }
+      const cursors = this.input.keyboard.createCursorKeys();
+      const wasd = this.input.keyboard.addKeys({
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        right: Phaser.Input.Keyboard.KeyCodes.D,
+      });
+
+      leftPressed = cursors.left.isDown || wasd.left.isDown;
+      rightPressed = cursors.right.isDown || wasd.right.isDown;
+
+      const pointer = this.input.activePointer;
+      if (pointer.isDown) {
+        if (pointer.x < this.scale.width / 2) {
+          leftPressed = true;
+        } else {
+          rightPressed = true;
         }
       }
     }
+
+    if (leftPressed) {
+      this.player.body.setVelocityX(-this.playerSpeed);
+      this.player.setFlipX(false);
+    } else if (rightPressed) {
+      this.player.body.setVelocityX(this.playerSpeed);
+      this.player.setFlipX(true);
+    }
+
+    const spawnMargin = 100;
+    const screenTop = this.cameras.main.scrollY;
+
+    GlobalWorld.platforms.forEach((data) => {
+      const exists = this.platforms
+        .getChildren()
+        .some((p) => p.globalId === data.id);
+
+      if (
+        !exists &&
+        data.y < screenTop - spawnMargin &&
+        data.y > screenTop - 1000
+      ) {
+        this.createPhysicalPlatform(data);
+      }
+    });
+
+    let realHighestY = Infinity;
+    this.platforms.children.iterate((p) => {
+      if (p.active && p.y < realHighestY) realHighestY = p.y;
+    });
+    if (realHighestY === Infinity) realHighestY = this.player.y;
+
+    if (this.game.playerSettings.id === 1) {
+      if (this.player.y < realHighestY + 1500) {
+        GlobalWorld.extend(this.scale.width, realHighestY);
+      }
+    }
+
+    this.platforms.children.iterate((platform) => {
+      if (!platform) return;
+
+      platform.body.checkCollision.up = true;
+
+      if (platform.y > this.scale.height + this.cameras.main.scrollY + 100) {
+        platform.destroy();
+      }
+
+      if (platform.isMoving && platform.body) {
+        if (platform.x <= platform.minX)
+          platform.body.setVelocityX(platform.speed);
+        else if (platform.x >= platform.maxX)
+          platform.body.setVelocityX(-platform.speed);
+      }
+    });
 
     if (this.ground && this.ground.active) {
       this.ground.body.setVelocityY(100);
@@ -391,6 +455,21 @@ class MainScene extends Phaser.Scene {
     this.score += 0.1;
     this.scoreText.setText("Score: " + Math.trunc(this.score));
 
+    let currentScore = Math.trunc(this.score);
+    if (
+      currentScore > 0 &&
+      currentScore % 100 === 0 &&
+      currentScore !== this.lastShieldScore
+    ) {
+      this.lastShieldScore = currentScore;
+      this.spawnShieldBonus();
+    }
+
+    if (this.isShielded && this.shieldGraphic) {
+      this.shieldGraphic.x = this.player.x;
+      this.shieldGraphic.y = this.player.y;
+    }
+
     if (this.platformSpeed < this.maxPlatformSpeed) {
       this.platformSpeed += 0.05;
     } else {
@@ -398,73 +477,23 @@ class MainScene extends Phaser.Scene {
     }
     let difficultyMultiplier = this.platformSpeed / 100;
     let progress = (this.platformSpeed - 100) / (this.maxPlatformSpeed - 100);
-    this.minY = 100 + 50 * progress;
-    this.maxY = 140 + 100 * progress;
+    this.minY = 100 + 70 * progress;
+    this.maxY = 140 + 140 * progress;
 
-    if (window.gameMode === "multi") {
-      if (this.platformSpeed > 370) {
-        this.player1.body.setGravityY(
-          this.baseGravity * (difficultyMultiplier * 0.8),
-        );
-        this.player2.body.setGravityY(
-          this.baseGravity * (difficultyMultiplier * 0.8),
-        );
-      } else {
-        this.player1.body.setGravityY(
-          this.baseGravity * (difficultyMultiplier * 0.7),
-        );
-        this.player2.body.setGravityY(
-          this.baseGravity * (difficultyMultiplier * 0.7),
-        );
-      }
+    GlobalWorld.minY = this.minY;
+    GlobalWorld.maxY = this.maxY;
+
+    if (this.platformSpeed > 200) {
+      this.player.body.setGravityY(
+        this.baseGravity * (difficultyMultiplier * 0.9),
+      );
     } else {
-      if (this.platformSpeed > 370) {
-        this.player.body.setGravityY(
-          this.baseGravity * (difficultyMultiplier * 0.8),
-        );
-      } else {
-        this.player.body.setGravityY(
-          this.baseGravity * (difficultyMultiplier * 0.7),
-        );
-      }
+      this.player.body.setGravityY(
+        this.baseGravity * (difficultyMultiplier * 0.7),
+      );
     }
-
     this.platforms.setVelocityY(this.platformSpeed);
     this.enemies.setVelocityY(this.platformSpeed);
-
-    this.platforms.children.iterate((platform) => {
-      if (!platform) return;
-
-      platform.body.checkCollision.up = true;
-
-      if (platform.isMoving) {
-        if (platform.x <= platform.minX)
-          platform.body.setVelocityX(platform.speed);
-        else if (platform.x >= platform.maxX)
-          platform.body.setVelocityX(-platform.speed);
-      }
-
-      const bottomEdge = this.cameras.main.scrollY + this.scale.height;
-
-      if (platform.y > bottomEdge + 50) {
-        let highestY = platform.y;
-        this.platforms.children.each((p) => {
-          if (p.y < highestY) highestY = p.y;
-        });
-
-        this.platforms.remove(platform, true, true);
-
-        if (this.platforms.getLength() < 15) {
-          let nextY = highestY - Phaser.Math.Between(this.minY, this.maxY);
-
-          this.spawnPlatform(nextY);
-
-          if (Phaser.Math.Between(1, 100) > 30) {
-            this.spawnPlatform(nextY + Phaser.Math.Between(0, 20), null, true);
-          }
-        }
-      }
-    });
 
     this.enemies.children.iterate((enemy) => {
       if (!enemy) return;
@@ -491,7 +520,7 @@ class MainScene extends Phaser.Scene {
 
       if (enemy.isShooter) {
         let now = this.time.now;
-        if (now - enemy.lastFired > 2000) {
+        if (now - enemy.lastFired > 4000) {
           this.fireBullet(enemy);
           enemy.lastFired = now;
         }
@@ -564,11 +593,15 @@ class MainScene extends Phaser.Scene {
     this.STATE_GAME = this.STATE_GAMEOVER;
     const finalScore = Math.trunc(this.score);
 
-    let highScore = localStorage.getItem("bestScore") || 0;
+    const settings = this.game.playerSettings;
+    const scoreKey =
+      settings && settings.isDuo ? `bestScore_${settings.id}` : "bestScore";
+
+    let highScore = localStorage.getItem(scoreKey) || 0;
 
     if (finalScore > highScore) {
       highScore = finalScore;
-      localStorage.setItem("bestScore", highScore);
+      localStorage.setItem(scoreKey, highScore);
     }
 
     this.scene.launch("GameOverScene", {
@@ -579,26 +612,38 @@ class MainScene extends Phaser.Scene {
   }
 }
 
-const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+function createGameInstance(containerId, playerConfig) {
+  const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+  const gameWidth = isMobile
+    ? window.innerWidth / (playerConfig.isDuo ? 2 : 1)
+    : 600;
+  const gameHeight = isMobile ? window.innerHeight : 600;
 
-const gameWidth = isMobile ? window.innerWidth : 600;
-const gameHeight = isMobile ? window.innerHeight : 600;
-
-const config = {
-  type: Phaser.AUTO,
-  width: gameWidth,
-  height: gameHeight,
-  scale: {
-    mode: isMobile ? Phaser.Scale.FIT : Phaser.Scale.NONE,
-  },
-  physics: {
-    default: "arcade",
-    arcade: {
-      gravity: { y: 800 },
-      debug: false,
+  const config = {
+    type: Phaser.AUTO,
+    parent: containerId,
+    width: gameWidth,
+    height: gameHeight,
+    input: {
+      keyboard: true,
+      mouse: true,
+      touch: true,
+      activePointers: 1,
     },
-  },
-  scene: [MainMenuScene, MainScene, GameOverScene, PauseScene],
-};
+    disableContextMenu: true,
+    scale: {
+      mode: isMobile ? Phaser.Scale.FIT : Phaser.Scale.NONE,
+    },
+    physics: {
+      default: "arcade",
+      arcade: { gravity: { y: 800 }, debug: false },
+    },
+    scene: [MainMenuScene, MainScene, GameOverScene, PauseScene],
+  };
 
-const game = new Phaser.Game(config);
+  const game = new Phaser.Game(config);
+  game.playerSettings = playerConfig;
+  return game;
+}
+
+window.game1 = createGameInstance("player1-root", { id: 1, isDuo: false });

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Jumper</title>
     <script src="//cdn.jsdelivr.net/npm/phaser@3.x.x/dist/phaser.min.js"></script>
+    <script src="globalWorld.js"></script>
     <script src="UIScenes.js"></script>
     <script src="game.js"></script>
     <style>
@@ -36,9 +37,31 @@
           border: none !important;
           border-radius: 0 !important;
           box-shadow: none !important;
+          margin: 0 auto !important;
         }
+
+        #game-container {
+          gap: 0 !important;
+          padding: 0 !important;
+          overflow: hidden;
+        }
+      }
+
+      #game-container {
+        display: flex;
+        flex-direction: row;
+        gap: 20px;
+        justify-content: center;
+        align-items: center;
+        width: 100vw;
+        height: 100vh;
       }
     </style>
   </head>
-  <body></body>
+  <body>
+    <div id="game-container">
+      <div id="player1-root"></div>
+      <div id="player2-root"></div>
+    </div>
+  </body>
 </html>
