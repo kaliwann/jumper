@@ -286,7 +286,7 @@ class MainScene extends Phaser.Scene {
     );
     this.shieldGraphic.setDepth(5);
 
-    this.time.delayedCall(10000, () => {
+    this.time.delayedCall(8000, () => {
       this.isShielded = false;
       if (this.shieldGraphic) {
         this.shieldGraphic.destroy();
