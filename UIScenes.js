@@ -135,19 +135,26 @@ class MainMenuScene extends Phaser.Scene {
   }
 
   mobileMenu(scoreText, titleText) {
-    const startBtn = this.createStyledButton(
-      this.centerX,
-      this.centerY + 40,
-      "START",
-      "#88B04B",
-    );
-    startBtn.on("pointerdown", () => {
-      const settings = this.game.playerSettings;
-      if (!settings || !settings.isDuo || settings.id === 1) {
-        if (typeof WorldSeed !== "undefined") WorldSeed.platforms = [];
-      }
-      this.scene.start("MainScene");
-    });
+    const settings = this.game.playerSettings;
+    const isDuo = settings && settings.isDuo;
+
+    if (!isDuo) {
+      const startBtn = this.createStyledButton(
+        this.centerX,
+        this.centerY + 40,
+        "START",
+        "#88B04B",
+      );
+
+      startBtn.on("pointerdown", () => {
+        const settings = this.game.playerSettings;
+        if (!settings || !settings.isDuo || settings.id === 1) {
+          if (typeof WorldSeed !== "undefined") WorldSeed.platforms = [];
+        }
+        this.scene.start("MainScene");
+      });
+      this.menuElements.add(startBtn);
+    }
 
     const uploadBtn = this.createStyledButton(
       this.centerX,
@@ -185,7 +192,6 @@ class MainMenuScene extends Phaser.Scene {
     this.menuElements.addMultiple([
       scoreText,
       titleText,
-      startBtn,
       uploadBtn,
       howToBtn,
       resetBtn,
@@ -247,7 +253,6 @@ class MainMenuScene extends Phaser.Scene {
 
       duoBtn.on("pointerdown", () => {
         duoBtn.setVisible(false);
-
         window.game1.destroy(true);
 
         window.game1 = createGameInstance("player1-root", {
@@ -258,6 +263,62 @@ class MainMenuScene extends Phaser.Scene {
           id: 2,
           isDuo: true,
         });
+
+        const ctrlPanel = document.getElementById("multiplayer-controls");
+        const startBtn = document.getElementById("multi-start-btn");
+        const restartBtn = document.getElementById("multi-restart-btn");
+        const menuBtn = document.getElementById("multi-menu-btn");
+
+        if (ctrlPanel) {
+          ctrlPanel.style.display = "flex";
+          startBtn.style.display = "block";
+
+          const resetGlobalState = () => {
+            if (typeof GlobalWorld !== "undefined") {
+              GlobalWorld.platforms = [];
+              GlobalWorld.nextId = 0;
+            }
+          };
+
+          startBtn.onclick = () => {
+            resetGlobalState();
+            [window.game1, window.game2].forEach((game) => {
+              const currentScene = game.scene.getScene("MainMenuScene");
+              if (currentScene) currentScene.scene.start("MainScene");
+            });
+            startBtn.style.display = "none";
+          };
+
+          restartBtn.onclick = () => {
+            resetGlobalState();
+            [window.game1, window.game2].forEach((game) => {
+              const mainScene = game.scene.getScene("MainScene");
+              const gameOver = game.scene.getScene("GameOverScene");
+              const pause = game.scene.getScene("PauseScene");
+
+              if (gameOver) game.scene.stop("GameOverScene");
+              if (pause) game.scene.stop("PauseScene");
+
+              if (mainScene) {
+                mainScene.scene.restart();
+                game.scene.resume("MainScene");
+              } else {
+                game.scene.start("MainScene");
+              }
+            });
+            startBtn.style.display = "none";
+          };
+
+          menuBtn.onclick = () => {
+            ctrlPanel.style.display = "none";
+            window.game1.destroy(true);
+            window.game2.destroy(true);
+            window.game1 = createGameInstance("player1-root", {
+              id: 1,
+              isDuo: false,
+            });
+          };
+        }
       });
     }
 
@@ -472,16 +533,19 @@ class PauseScene extends Phaser.Scene {
       this.scene.resume("MainScene");
     });
 
-    const restartBtn = this.createBtn(
-      width / 2,
-      height / 2 + 80,
-      "RESTART",
-      "#F4C2C2",
-    );
-    restartBtn.on("pointerdown", () => {
-      this.scene.stop();
-      this.scene.get("MainScene").scene.restart();
-    });
+    const settings = this.game.playerSettings;
+    if (!settings.isDuo) {
+      const restartBtn = this.createBtn(
+        width / 2,
+        height / 2 + 80,
+        "RESTART",
+        "#F4C2C2",
+      );
+      restartBtn.on("pointerdown", () => {
+        this.scene.stop();
+        this.scene.get("MainScene").scene.restart();
+      });
+    }
 
     const menuBtn = this.createBtn(
       width / 2,
@@ -543,16 +607,8 @@ class GameOverScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const restartBtn = this.add
-      .text(width / 2, height / 2 + 100, "TRY AGAIN", {
-        fontSize: "32px",
-        backgroundColor: "#88B04B",
-        padding: 15,
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-
     const handleRestart = () => {
+      if (this.game.playerSettings.isDuo) return;
       this.scene.stop();
       const mainScene = this.scene.get("MainScene");
       if (mainScene) {
@@ -560,7 +616,18 @@ class GameOverScene extends Phaser.Scene {
       }
     };
 
-    restartBtn.on("pointerdown", handleRestart);
+    if (!this.game.playerSettings.isDuo) {
+      const restartBtn = this.add
+        .text(width / 2, height / 2 + 100, "TRY AGAIN", {
+          fontSize: "32px",
+          backgroundColor: "#88B04B",
+          padding: 15,
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+
+      restartBtn.on("pointerdown", handleRestart);
+    }
 
     this.input.keyboard.on("keydown-SPACE", handleRestart);
 
