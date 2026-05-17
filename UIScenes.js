@@ -11,6 +11,11 @@ const InstructionsText =
   "MOBILE:\nTap and hold Left/Right side of screen.";
 
 const gameNameText = "JUMPER";
+const DefaultCharacterKey = "defaultSkin";
+const CharacterSkins = {
+  defaultSkin: "images/defaultSkin.png",
+  redSkin: "images/redSkin.png",
+};
 
 class MainMenuScene extends Phaser.Scene {
   constructor() {
@@ -18,7 +23,8 @@ class MainMenuScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("defaultSkin", "images/defaultSkin.png");
+    this.load.image("defaultSkin", CharacterSkins.defaultSkin);
+    this.load.image("redSkin", CharacterSkins.redSkin);
 
     const settings = this.game.playerSettings;
 
@@ -30,7 +36,10 @@ class MainMenuScene extends Phaser.Scene {
       textureKey = `player_${settings.id}`;
     }
 
-    const savedSkin = window[skinKey] || "images/defaultSkin.png";
+    const selectedCharacter = this.getSelectedCharacterKey();
+    const selectedSkinPath =
+      CharacterSkins[selectedCharacter] || CharacterSkins[DefaultCharacterKey];
+    const savedSkin = window[skinKey] || selectedSkinPath;
     this.load.image(textureKey, savedSkin);
   }
 
@@ -52,6 +61,27 @@ class MainMenuScene extends Phaser.Scene {
     this.setupCharacterVisuals(this.playerPreview);
 
     this.menuElements = this.add.group();
+    this.backButton = this.add
+      .text(20, 20, "BACK", {
+        fontSize: "20px",
+        fontFamily: "Courier New",
+        backgroundColor: Theme.accent,
+        fill: "#fff",
+        padding: { x: 12, y: 8 },
+        fontStyle: "bold",
+      })
+      .setOrigin(0, 0)
+      .setDepth(20)
+      .setScrollFactor(0)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true });
+    this.backButton.on("pointerover", () => this.backButton.setAlpha(0.8));
+    this.backButton.on("pointerout", () => this.backButton.setAlpha(1));
+    this.backButton.on("pointerdown", () => {
+      if (this.onBackAction) {
+        this.onBackAction();
+      }
+    });
 
     this.showInitialMenu();
   }
@@ -60,8 +90,14 @@ class MainMenuScene extends Phaser.Scene {
     this.menuElements.clear(true, true);
   }
 
+  setBackAction(action) {
+    this.onBackAction = action || null;
+    this.backButton.setVisible(Boolean(this.onBackAction));
+  }
+
   showInitialMenu() {
     this.clearMenu();
+    this.setBackAction(null);
     this.playerPreview.setX(this.centerX).setVisible(true);
 
     const settings = this.game.playerSettings;
@@ -110,6 +146,16 @@ class MainMenuScene extends Phaser.Scene {
       );
       howToBtn.on("pointerdown", () => this.showInstructions());
 
+      const selectCharacterBtn = this.createStyledButton(
+        this.centerX,
+        this.centerY + 220,
+        "SELECT CHARACTER",
+        "#F4C2C2",
+      );
+      selectCharacterBtn.on("pointerdown", () =>
+        this.showCharacterSelection(() => this.showInitialMenu()),
+      );
+
       const resetBtn = this.add
         .text(this.centerX, this.scale.height - 50, "Reset score", {
           fontSize: "14px",
@@ -129,6 +175,7 @@ class MainMenuScene extends Phaser.Scene {
         titleText,
         startBtn,
         howToBtn,
+        selectCharacterBtn,
         resetBtn,
       ]);
     }
@@ -172,6 +219,16 @@ class MainMenuScene extends Phaser.Scene {
     );
     howToBtn.on("pointerdown", () => this.showInstructions());
 
+    const selectCharacterBtn = this.createStyledButton(
+      this.centerX,
+      this.centerY + 280,
+      "SELECT CHARACTER",
+      "#F4C2C2",
+    );
+    selectCharacterBtn.on("pointerdown", () =>
+      this.showCharacterSelection(() => this.showInitialMenu()),
+    );
+
     const resetBtn = this.add
       .text(this.centerX, this.scale.height - 50, "Reset score", {
         fontSize: "14px",
@@ -194,12 +251,14 @@ class MainMenuScene extends Phaser.Scene {
       titleText,
       uploadBtn,
       howToBtn,
+      selectCharacterBtn,
       resetBtn,
     ]);
   }
 
   showModeSelection() {
     this.clearMenu();
+    this.setBackAction(() => this.showInitialMenu());
     this.playerPreview.setX(this.centerX);
     this.playerPreview.setVisible(true);
 
@@ -231,15 +290,7 @@ class MainMenuScene extends Phaser.Scene {
       "#88B04B",
     );
 
-    const backBtn = this.createStyledButton(
-      this.centerX,
-      this.centerY + 220,
-      "BACK",
-      Theme.accent,
-    );
-
     singleBtn.on("pointerdown", () => this.showSinglePlayerMenu());
-    backBtn.on("pointerdown", () => this.showInitialMenu());
 
     const settings = this.game.playerSettings;
 
@@ -322,11 +373,12 @@ class MainMenuScene extends Phaser.Scene {
       });
     }
 
-    this.menuElements.addMultiple([singleBtn, backBtn, titleText, scoreText]);
+    this.menuElements.addMultiple([singleBtn, titleText, scoreText]);
   }
 
   showSinglePlayerMenu() {
     this.clearMenu();
+    this.setBackAction(() => this.showModeSelection());
 
     const highScore = localStorage.getItem("bestScore") || 0;
     const scoreText = this.add
@@ -365,19 +417,89 @@ class MainMenuScene extends Phaser.Scene {
     );
     uploadBtn.on("pointerdown", () => this.handleUpload());
 
-    const backBtn = this.createStyledButton(
+    const selectCharacterBtn = this.createStyledButton(
       this.centerX,
       this.centerY + 220,
-      "BACK",
-      Theme.accent,
+      "SELECT CHARACTER",
+      "#F4C2C2",
     );
-    backBtn.on("pointerdown", () => this.showModeSelection());
+    selectCharacterBtn.on("pointerdown", () =>
+      this.showCharacterSelection(() => this.showSinglePlayerMenu()),
+    );
 
-    this.menuElements.addMultiple([playBtn, uploadBtn, backBtn, titleText]);
+    this.menuElements.addMultiple([
+      playBtn,
+      uploadBtn,
+      selectCharacterBtn,
+      titleText,
+      scoreText,
+    ]);
+  }
+
+  showCharacterSelection(onBack) {
+    this.clearMenu();
+    this.setBackAction(onBack);
+
+    const title = this.add
+      .text(this.centerX, this.centerY - 220, "SELECT CHARACTER", {
+        fontSize: "32px",
+        fontFamily: "Courier New",
+        fill: Theme.darkText,
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+
+    const selectedCharacter = this.getSelectedCharacterKey();
+    const characterKeys = Object.keys(CharacterSkins);
+
+    characterKeys.forEach((characterKey, index) => {
+      const x = this.centerX + (index === 0 ? -110 : 110);
+      const y = this.centerY - 40;
+      const isSelected = selectedCharacter === characterKey;
+
+      const frame = this.add
+        .rectangle(
+          x,
+          y,
+          140,
+          140,
+          isSelected ? 0xb2d3a8 : 0xffffff,
+          isSelected ? 1 : 0.85,
+        )
+        .setStrokeStyle(4, isSelected ? 0x88b04b : 0xa1887f)
+        .setInteractive({ useHandCursor: true });
+
+      const icon = this.add
+        .sprite(x, y - 10, characterKey)
+        .setDisplaySize(70, 70)
+        .setInteractive({ useHandCursor: true });
+
+      const label = this.add
+        .text(x, y + 50, characterKey.replace("Skin", ""), {
+          fontSize: "18px",
+          fontFamily: "Courier New",
+          fill: Theme.darkText,
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5);
+
+      const handlePick = () => {
+        this.selectCharacter(characterKey);
+        this.showCharacterSelection(onBack);
+      };
+
+      frame.on("pointerdown", handlePick);
+      icon.on("pointerdown", handlePick);
+
+      this.menuElements.addMultiple([frame, icon, label]);
+    });
+
+    this.menuElements.add(title);
   }
 
   showInstructions() {
     this.clearMenu();
+    this.setBackAction(() => this.showInitialMenu());
 
     const title = this.add
       .text(this.centerX, this.centerY - 170, "HOW TO PLAY", {
@@ -399,15 +521,7 @@ class MainMenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const backBtn = this.createStyledButton(
-      this.centerX,
-      this.centerY + 200,
-      "BACK",
-      Theme.accent,
-    );
-    backBtn.on("pointerdown", () => this.showInitialMenu());
-
-    this.menuElements.addMultiple([title, text, backBtn]);
+    this.menuElements.addMultiple([title, text]);
   }
 
   setupCharacterVisuals(sprite) {
@@ -481,6 +595,43 @@ class MainMenuScene extends Phaser.Scene {
     });
 
     this.load.start();
+  }
+
+  getCharacterStorageKey() {
+    const settings = this.game.playerSettings;
+    return settings && settings.isDuo
+      ? `selectedCharacter_${settings.id}`
+      : "selectedCharacter";
+  }
+
+  getSelectedCharacterKey() {
+    const key = this.getCharacterStorageKey();
+    const savedCharacter = localStorage.getItem(key);
+    if (savedCharacter && CharacterSkins[savedCharacter]) {
+      return savedCharacter;
+    }
+    return DefaultCharacterKey;
+  }
+
+  selectCharacter(characterKey) {
+    if (!CharacterSkins[characterKey]) return;
+
+    const key = this.getCharacterStorageKey();
+    localStorage.setItem(key, characterKey);
+
+    const settings = this.game.playerSettings;
+    const skinKey =
+      settings && settings.isDuo
+        ? `customSkinURL_${settings.id}`
+        : "customSkinURL";
+    const selectedSkinPath = CharacterSkins[characterKey];
+
+    if (window[skinKey]) {
+      URL.revokeObjectURL(window[skinKey]);
+      delete window[skinKey];
+    }
+
+    this.updateCharacterImage(selectedSkinPath);
   }
 
   createStyledButton(x, y, label, color) {

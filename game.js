@@ -3,11 +3,14 @@ class MainScene extends Phaser.Scene {
     super("MainScene");
   }
   preload() {
+    this.load.image("bgForestStart", "images/background_forest_1.png");
+    this.load.image("bgForest", "images/background_forest_2.png");
     this.load.image("pause", "images/pause.png");
     this.load.image("enemy", "images/enemy.png");
     this.load.image("shooter", "images/shooter.png");
     this.load.image("pinkBullet", "images/pinkFlower.png");
     this.load.image("shield", "images/shield.png");
+    this.load.image("background_grass", "images/background_grass.png");
     const settings = this.game.playerSettings;
     const skinKey =
       settings && settings.isDuo
@@ -17,6 +20,16 @@ class MainScene extends Phaser.Scene {
       settings && settings.isDuo ? `player_${settings.id}` : "player";
 
     const skinURL = window[skinKey];
+    const selectedCharacterKey =
+      settings && settings.isDuo
+        ? `selectedCharacter_${settings.id}`
+        : "selectedCharacter";
+    const selectedCharacter =
+      localStorage.getItem(selectedCharacterKey) || "defaultSkin";
+    const builtInSkinPath =
+      selectedCharacter === "redSkin"
+        ? "images/redSkin.png"
+        : "images/defaultSkin.png";
 
     if (skinURL) {
       if (this.textures.exists(textureKey)) {
@@ -24,12 +37,15 @@ class MainScene extends Phaser.Scene {
       }
       this.load.image(textureKey, skinURL);
     } else {
-      this.load.image(textureKey, "images/defaultSkin.png");
+      this.load.image(textureKey, builtInSkinPath);
     }
   }
   create() {
-    this.cameras.main.setBackgroundColor("#FDF5E6");
+    this.cameras.main.setBackgroundColor("#0b1f1b");
     const { width, height } = this.scale;
+    this.backgroundScrollFactor = 0.45;
+    this.backgroundScrollOffset = 0;
+    this.isIntroBackgroundActive = true;
 
     this.STATE_WAITING = "WAITING";
     this.STATE_PLAYING = "PLAYING";
@@ -56,7 +72,8 @@ class MainScene extends Phaser.Scene {
         fontStyle: "bold",
         fill: "#8F4C55",
       })
-      .setDepth(5);
+      .setDepth(5)
+      .setScrollFactor(0);
 
     this.tapToStart = this.add
       .text(this.scale.width / 2, this.scale.height - 80, "TAP TO START", {
@@ -66,11 +83,13 @@ class MainScene extends Phaser.Scene {
         fontStyle: "bold",
       })
       .setOrigin(0.5)
-      .setDepth(3);
+      .setDepth(3)
+      .setScrollFactor(0);
 
     this.pauseButton = this.add
       .sprite(width - 30, 30, "pause")
-      .setInteractive({ useHandCursor: true });
+      .setInteractive({ useHandCursor: true })
+      .setScrollFactor(0);
     this.pauseButton.setDepth(5);
     this.pauseButton.on("pointerdown", () => {
       this.scene.pause();
@@ -108,6 +127,15 @@ class MainScene extends Phaser.Scene {
     this.ground.body.setAllowGravity(false);
     this.ground.body.setImmovable(true);
 
+    this.grassOverlay = this.add
+      .image(this.centerX, this.bottomY, "background_grass")
+      .setOrigin(0.5, 1)
+      .setDepth(6);
+    this.grassOverlay.displayWidth = this.scale.width;
+    this.grassOverlay.displayHeight = 125;
+
+    this.createScrollingBackground();
+
     const settings = this.game.playerSettings;
 
     if (settings.id === 2) {
@@ -144,6 +172,80 @@ class MainScene extends Phaser.Scene {
     this.input.addPointer(1);
 
     this.input.activePointer.isDown = false;
+  }
+
+  createScrollingBackground() {
+    const { width, height } = this.scale;
+    const forestTexture = this.textures.get("bgForest").getSourceImage();
+    const zoomScale = 1.08;
+    const fitScale = Math.max(
+      width / forestTexture.width,
+      height / forestTexture.height,
+    );
+
+    this.backgroundScale = fitScale * zoomScale;
+    this.backgroundTileHeight = forestTexture.height * this.backgroundScale;
+    this.backgroundSeamOverlap = 2;
+    this.backgroundLoopNear = this.add
+      .image(width / 2, -this.backgroundTileHeight, "bgForest")
+      .setOrigin(0.5, 0)
+      .setScale(this.backgroundScale)
+      .setScrollFactor(0)
+      .setDepth(-10);
+
+    this.backgroundLoopFar = this.add
+      .image(width / 2, -this.backgroundTileHeight * 2, "bgForest")
+      .setOrigin(0.5, 0)
+      .setScale(this.backgroundScale)
+      .setScrollFactor(0)
+      .setDepth(-10);
+
+    this.backgroundStart = this.add
+      .image(width / 2, 0, "bgForestStart")
+      .setOrigin(0.5, 0)
+      .setScale(this.backgroundScale)
+      .setScrollFactor(0)
+      .setDepth(-10);
+  }
+
+  updateScrollingBackground(scrollSpeed) {
+    if (!this.backgroundLoopNear || !this.backgroundLoopFar) return;
+
+    const deltaSeconds = this.game.loop.delta / 1000;
+    this.backgroundScrollOffset +=
+      scrollSpeed * this.backgroundScrollFactor * deltaSeconds;
+
+    if (this.isIntroBackgroundActive) {
+      const introOffset =
+        this.backgroundScrollOffset % this.backgroundTileHeight;
+      const nearY =
+        -this.backgroundTileHeight + introOffset - this.backgroundSeamOverlap;
+
+      this.backgroundLoopNear.y = nearY;
+      this.backgroundLoopFar.y =
+        nearY - this.backgroundTileHeight + this.backgroundSeamOverlap;
+
+      if (this.backgroundStart && this.backgroundStart.active) {
+        this.backgroundStart.y = introOffset;
+        if (this.backgroundStart.y >= this.scale.height) {
+          this.backgroundStart.destroy();
+          this.backgroundStart = null;
+          this.isIntroBackgroundActive = false;
+        }
+      } else {
+        this.isIntroBackgroundActive = false;
+      }
+      return;
+    }
+
+    while (this.backgroundScrollOffset >= this.backgroundTileHeight) {
+      this.backgroundScrollOffset -= this.backgroundTileHeight;
+    }
+
+    const topY = -this.backgroundTileHeight + this.backgroundScrollOffset;
+    this.backgroundLoopNear.y = topY - this.backgroundSeamOverlap;
+    this.backgroundLoopFar.y =
+      topY + this.backgroundTileHeight - this.backgroundSeamOverlap;
   }
 
   createPlayer() {
@@ -250,6 +352,9 @@ class MainScene extends Phaser.Scene {
     this.platforms.add(rect);
     rect.body.setImmovable(true);
     rect.body.checkCollision.up = false;
+    rect.body.checkCollision.left = false;
+    rect.body.checkCollision.right = false;
+    rect.body.checkCollision.down = false;
 
     if (data.isMoving) {
       rect.isMoving = true;
@@ -362,6 +467,11 @@ class MainScene extends Phaser.Scene {
   }
 
   handlePlayingState() {
+    this.updateScrollingBackground(this.platformSpeed);
+    const desiredScrollY = this.player.y - this.scale.height / 2;
+    if (desiredScrollY < this.cameras.main.scrollY) {
+      this.cameras.main.scrollY = desiredScrollY;
+    }
     this.player.body.setVelocityX(0);
 
     const settings = this.game.playerSettings;
@@ -450,6 +560,16 @@ class MainScene extends Phaser.Scene {
     if (this.ground && this.ground.active) {
       this.ground.body.setVelocityY(100);
       if (this.ground.y > this.scale.height + 100) this.ground.destroy();
+    }
+
+    if (this.grassOverlay && this.grassOverlay.active) {
+      if (this.ground && this.ground.active) {
+        this.grassOverlay.x = this.ground.x;
+        this.grassOverlay.y = this.ground.y;
+      }
+      if (this.grassOverlay.y > this.scale.height + 130) {
+        this.grassOverlay.destroy();
+      }
     }
 
     this.score += 0.1;
